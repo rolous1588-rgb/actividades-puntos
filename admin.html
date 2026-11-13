@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Panel docente · Actividades</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#14213d;--muted:#5b6785;--line:#d9dfec;--brand:#1f4fd8;--err:#b42318;--ok:#0e7a4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--ink);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+header h1{margin:0;font-size:1.05rem}
+main{max-width:1200px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.card h2{margin:0 0 8px;font-size:1rem}
+input,select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);min-width:0}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--brand);color:#fff}
+button.sec{background:#e8edfb;color:#173ba3}
+button.danger{background:#fdecea;color:var(--err)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.stats{display:flex;flex-wrap:wrap;gap:10px}
+.stat{background:#eef2ff;border-radius:10px;padding:8px 12px}
+.stat b{display:block;font-size:1.3rem}
+.muted{color:var(--muted);font-size:.85rem}
+.tag{display:inline-block;border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:600}
+.t-open{background:#e3f6ed;color:var(--ok)}.t-closed{background:#fdecea;color:var(--err)}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:70vh}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:#eef2ff;white-space:nowrap}
+td.desc{min-width:260px;max-width:420px;white-space:pre-wrap;word-break:break-word}
+.chip{display:inline-flex;gap:6px;align-items:center;background:#fff4de;color:#9a5b00;border-radius:999px;padding:3px 10px;margin:3px 4px 0 0;font-size:.82rem}
+.chip button{background:none;color:inherit;padding:0 2px;font-size:1rem}
+#msg{margin:8px 0}
+.err{color:var(--err)}
+</style>
+</head>
+<body>
+<header><h1>Panel docente · Actividades con puntos extra</h1><button class="sec hide" id="btnSalir" style="display:none">Salir</button></header>
+<main id="app"></main>
+
+<script>
+const SB='https://ulbstgtnzsevnsvnnuby.supabase.co';
+const KEY='sb_publishable_JfdOTWjVXropkVO7dzDSTA_AWr2Cv94';
+let PASS=sessionStorage.getItem('act_pass')||'';
+let DATA=null;
+const $=s=>document.querySelector(s);
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function rpc(fn,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${fn}`,{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'},body:JSON.stringify(args||{})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.message||('http '+r.status));
+  return j;
+}
+const fmt=iso=>iso?new Date(iso).toLocaleString('es-BO',{timeZone:'America/La_Paz',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):'';
+const fd=v=>v?v.split('-').reverse().join('/'):'';
+
+function loginView(m){
+  $('#btnSalir').style.display='none';
+  $('#app').innerHTML=`<div class="card" style="max-width:380px;margin:40px auto">
+    <h2>Ingreso del docente</h2>
+    <input id="pw" type="password" placeholder="Clave" style="width:100%" autocomplete="current-password">
+    ${m?`<p class="err">${esc(m)}</p>`:''}
+    <button id="go" style="margin-top:10px;width:100%">Entrar</button></div>`;
+  $('#go').onclick=()=>{PASS=$('#pw').value;load()};
+  $('#pw').addEventListener('keydown',e=>{if(e.key==='Enter'){PASS=$('#pw').value;load()}});
+}
+async function load(){
+  try{
+    const r=await rpc('act_admin_listar',{p_pass:PASS});
+    if(r.error){sessionStorage.removeItem('act_pass');return loginView('Clave incorrecta (o demasiados intentos; espera 10 min).')}
+    sessionStorage.setItem('act_pass',PASS);
+    DATA=r;view();
+  }catch(e){loginView('No se pudo conectar.')}
+}
+
+let F={asig:'',q:'',carrera:''};
+function rows(){
+  const out=[];
+  DATA.estudiantes.forEach(e=>e.actividades.forEach((a,i)=>out.push({e,a,n:i+1})));
+  return out;
+}
+function filtered(){
+  const q=F.q.trim().toLowerCase();
+  return rows().filter(r=>{
+    if(F.asig&&r.a.asignatura!==F.asig)return false;
+    if(F.carrera&&r.e.carrera!==F.carrera)return false;
+    if(q){const h=(r.e.nombres+' '+r.e.apellidos+' '+r.e.ci+' '+r.e.carnet+' '+r.a.descripcion).toLowerCase();if(!h.includes(q))return false}
+    return true;
+  });
+}
+function view(){
+  $('#btnSalir').style.display='';
+  const c=DATA.config;
+  const cerrado=!(new Date(c.ahora)<=new Date(c.cierre)||c.reabierto_global);
+  const all=rows();
+  const asigs=[...new Set(all.map(r=>r.a.asignatura))].sort();
+  const carreras=[...new Set(DATA.estudiantes.map(e=>e.carrera))].sort();
+  const fl=filtered();
+  const pts=fl.reduce((s,r)=>s+(+r.a.puntos||0),0);
+  const est=new Set(fl.map(r=>r.e.ci_norm)).size;
+  $('#app').innerHTML=`
+  <div class="card">
+    <div class="bar"><h2 style="margin:0">Estado del formulario</h2>
+      <span class="tag ${cerrado?'t-closed':'t-open'}">${cerrado?'CERRADO':'ABIERTO'}</span>
+      ${c.reabierto_global?'<span class="tag t-open">reabierto para todos</span>':''}
+    </div>
+    <p class="muted">Cierre programado: <b>${fmt(c.cierre)}</b> (hora de Bolivia)</p>
+    <div class="bar">
+      <button class="${c.reabierto_global?'danger':''}" onclick="toggleGlobal(${!c.reabierto_global})">${c.reabierto_global?'Quitar reapertura global':'Reabrir para todos'}</button>
+      <span class="muted">o nuevo cierre:</span>
+      <input type="datetime-local" id="nuevoCierre">
+      <button class="sec" onclick="setCierre()">Cambiar cierre</button>
+    </div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
+    <div class="bar"><b>Reabrir solo para un estudiante (CI):</b>
+      <input id="ciRe" placeholder="CI del estudiante" inputmode="text">
+      <button class="sec" onclick="reabrirCI(true)">Permitir</button>
+    </div>
+    <div>${DATA.reaperturas.length?DATA.reaperturas.map(ci=>`<span class="chip">${esc(ci)} <button title="Quitar" onclick="quitarCI('${esc(ci)}')">×</button></span>`).join(''):'<span class="muted">Sin reaperturas individuales.</span>'}</div>
+    <div id="msg" class="muted"></div>
+  </div>
+
+  <div class="card">
+    <div class="bar" style="margin-bottom:10px">
+      <select id="fAsig" onchange="F.asig=this.value;view()"><option value="">Todas las asignaturas</option>${asigs.map(a=>`<option ${F.asig===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
+      <select id="fCar" onchange="F.carrera=this.value;view()"><option value="">Todas las carreras</option>${carreras.map(a=>`<option ${F.carrera===a?'selected':''}>${esc(a)}</option>`).join('')}</select>
+      <input id="fQ" placeholder="Buscar nombre, CI o texto (FEXPO, gatitos…)" value="${esc(F.q)}" style="flex:1;min-width:200px" oninput="F.q=this.value;clearTimeout(window._t);window._t=setTimeout(()=>{view();const i=$('#fQ');i.focus();i.setSelectionRange(i.value.length,i.value.length)},300)">
+      <button class="sec" onclick="load()">Actualizar</button>
+      <button onclick="exportar()">Exportar a Excel</button>
+    </div>
+    <div class="stats" style="margin-bottom:10px">
+      <div class="stat"><b>${est}</b>estudiantes</div>
+      <div class="stat"><b>${fl.length}</b>actividades</div>
+      <div class="stat"><b>${pts}</b>puntos declarados</div>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>Apellidos y nombres</th><th>CI</th><th>Carnet</th><th>Carrera</th><th>Suma a</th><th>Actividad</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Pts</th><th></th></tr></thead>
+      <tbody>${fl.map((r,i)=>`<tr>
+        <td>${i+1}</td><td>${esc(r.e.apellidos)} ${esc(r.e.nombres)}</td><td>${esc(r.e.ci)}</td><td>${esc(r.e.carnet)}</td><td>${esc(r.e.carrera)}</td>
+        <td>${esc(r.a.asignatura)}</td><td class="desc">${esc(r.a.descripcion)}</td><td>${fd(r.a.fecha_inicio)}</td><td>${fd(r.a.fecha_fin)}</td><td>${r.a.dias??''}</td><td>${r.a.puntos??''}</td>
+        <td><button class="danger" title="Borra TODO el registro de este estudiante" onclick="borrar('${esc(r.e.ci_norm)}','${esc(r.e.apellidos+' '+r.e.nombres)}')">Borrar</button></td></tr>`).join('')||'<tr><td colspan="12" class="muted">Sin resultados.</td></tr>'}</tbody>
+    </table></div>
+    <p class="muted">Asignaturas declaradas por cada estudiante aparecen en la exportación. "Borrar" elimina todo el registro del estudiante (por si alguien usó un CI ajeno).</p>
+  </div>
+  <div class="card"><b>Cambiar clave del panel</b>
+    <div class="bar" style="margin-top:8px"><input id="nuevaClave" type="password" placeholder="Nueva clave (mín. 8)"><button class="sec" onclick="cambiarClave()">Guardar clave</button></div></div>`;
+}
+function msg(t,bad){const m=$('#msg');if(m){m.textContent=t;m.className=bad?'err':'muted'}}
+async function act(fn,args,okTxt){
+  try{const r=await rpc(fn,{p_pass:PASS,...args});if(r.error){msg('Error: '+r.error,true);return false}await load();msg(okTxt);return true}
+  catch(e){msg('Error: '+e.message,true);return false}
+}
+function toggleGlobal(v){act('act_admin_config',{p_global:v},v?'Reabierto para todos.':'Reapertura global quitada.')}
+function setCierre(){
+  const v=$('#nuevoCierre').value;if(!v){msg('Elige fecha y hora.',true);return}
+  act('act_admin_config',{p_cierre:v+':00-04:00'},'Cierre actualizado.');
+}
+function reabrirCI(si){const ci=$('#ciRe').value.trim();if(ci.length<5){msg('Escribe el CI.',true);return}act('act_admin_reabrir_ci',{p_ci:ci,p_si:si},'Permitido para ese CI.')}
+function quitarCI(ci){act('act_admin_reabrir_ci',{p_ci:ci,p_si:false},'Reapertura quitada.')}
+function borrar(ci,nombre){if(confirm('¿Borrar TODO el registro de '+nombre+'? No se puede deshacer.'))act('act_admin_borrar',{p_ci:ci},'Registro borrado.')}
+function cambiarClave(){const n=$('#nuevaClave').value;if(n.length<8){msg('Mínimo 8 caracteres.',true);return}
+  rpc('act_admin_cambiar_clave',{p_pass:PASS,p_nueva:n}).then(r=>{if(r.ok){PASS=n;sessionStorage.setItem('act_pass',n);msg('Clave cambiada.')}else msg('Error: '+r.error,true)})}
+
+function exportar(){
+  const fl=filtered();
+  const h=['Apellidos','Nombres','CI','Carnet universitario','Carrera','Asignaturas que lleva','Suma a (asignatura)','Actividad','Fecha inicio','Fecha fin','Días','Puntos declarados','Última actualización'];
+  const q=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  const lines=[h.map(q).join(';')];
+  fl.forEach(r=>lines.push([r.e.apellidos,r.e.nombres,r.e.ci,r.e.carnet,r.e.carrera,r.e.asignaturas.join(', '),r.a.asignatura,r.a.descripcion,fd(r.a.fecha_inicio),fd(r.a.fecha_fin),r.a.dias??'',r.a.puntos??'',fmt(r.e.actualizado_en)].map(q).join(';')));
+  const blob=new Blob(['﻿'+'sep=;\r\n'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='actividades_puntos_extra_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+}
+$('#btnSalir').onclick=()=>{sessionStorage.removeItem('act_pass');PASS='';loginView()};
+if(PASS)load();else loginView();
+</script>
+</body>
+</html>

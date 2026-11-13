@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Registro de actividades con puntos extra</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#14213d;--muted:#5b6785;--line:#d9dfec;--brand:#1f4fd8;--brand-d:#173ba3;--ok:#0e7a4f;--warn:#9a5b00;--warnbg:#fff4de;--err:#b42318;--errbg:#fdecea}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--ink);color:#fff;padding:18px 16px}
+header h1{margin:0;font-size:1.15rem}
+header p{margin:4px 0 0;color:#c9d3ee;font-size:.9rem}
+main{max-width:640px;margin:0 auto;padding:14px 12px 60px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
+.card h2{margin:0 0 10px;font-size:1.05rem}
+label{display:block;font-weight:600;font-size:.9rem;margin:12px 0 4px}
+input,select,textarea{width:100%;font:inherit;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+textarea{min-height:92px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--brand);border-color:var(--brand)}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 16px;cursor:pointer}
+.btn{background:var(--brand);color:#fff;width:100%}
+.btn:hover{background:var(--brand-d)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn2{background:#e8edfb;color:var(--brand-d)}
+.btn-add{background:#e8edfb;color:var(--brand-d);width:100%;margin-top:10px;font-size:1rem}
+.btn-del{background:transparent;color:var(--err);padding:6px 8px;font-size:.85rem}
+.banner{border-radius:12px;padding:12px 14px;margin:12px 0;font-size:.92rem}
+.b-info{background:#e8f0ff;color:#173ba3}
+.b-warn{background:var(--warnbg);color:var(--warn)}
+.b-err{background:var(--errbg);color:var(--err)}
+.b-ok{background:#e3f6ed;color:var(--ok)}
+.act-head{display:flex;justify-content:space-between;align-items:center}
+.act-head h3{margin:0;font-size:1rem}
+.hint{color:var(--muted);font-size:.82rem;margin-top:4px}
+.sum dt{font-weight:600;color:var(--muted);font-size:.8rem;margin-top:10px}
+.sum dd{margin:2px 0 0;white-space:pre-wrap;word-break:break-word}
+.pill{display:inline-block;background:#e8edfb;color:var(--brand-d);border-radius:999px;padding:2px 10px;font-size:.82rem;margin:2px 4px 2px 0}
+ul.errs{margin:6px 0 0 18px;padding:0}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>Registro de actividades con puntos extra</h1>
+  <p>Facultad de Ingeniería y Ciencias Aplicadas Mecaelectrónicas</p>
+</header>
+<main id="app"><div class="card">Cargando…</div></main>
+
+<script>
+const SB='https://ulbstgtnzsevnsvnnuby.supabase.co';
+const KEY='sb_publishable_JfdOTWjVXropkVO7dzDSTA_AWr2Cv94';
+const MATERIAS=['Electrónica Digital 1','Electrónica Digital 2','Medidas Eléctricas','Transformadas y Funciones Especiales','Métodos Numéricos','Titulación'];
+const CARRERAS=['Ingeniería Eléctrica','Ingeniería Electrónica','Ingeniería Electromecánica','Ingeniería Biomédica'];
+const AVISO_FINAL='Todas estas actividades se te solicitará demostrarlas la próxima semana en clases. Si se comprueba que se falseó información, se descontará nota.';
+
+const S={screen:'login',ci:'',carnet:'',abierto:true,cierre:null,
+  est:{nombres:'',apellidos:'',carreraSel:'',carreraOtra:''},
+  asig:[{sel:'',otro:''}], acts:[newAct()], guardado:null, existe:false};
+
+function newAct(){return {fi:'',ff:'',dias:'',desc:'',pts:'',asig:''}}
+const $=s=>document.querySelector(s);
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function rpc(fn,args){
+  const r=await fetch(`${SB}/rest/v1/rpc/${fn}`,{method:'POST',headers:{'apikey':KEY,'Content-Type':'application/json'},body:JSON.stringify(args||{})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){const e=new Error(j.message||('http '+r.status));e.body=j;throw e}
+  return j;
+}
+function fmtCierre(iso){
+  if(!iso)return '';
+  const d=new Date(iso);
+  return d.toLocaleString('es-BO',{timeZone:'America/La_Paz',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+}
+function banner(){
+  if(!S.cierre)return '';
+  if(S.abierto) return `<div class="banner b-info">⏰ El formulario cierra el <b>${fmtCierre(S.cierre)}</b> (hora de Bolivia). Hasta entonces puedes volver a entrar para editar.</div>`;
+  return `<div class="banner b-err"><b>El formulario está cerrado.</b> Si necesitas registrar o corregir algo, habla con tu docente.</div>`;
+}
+function carreraVal(){return S.est.carreraSel==='__otra'?S.est.carreraOtra.trim():S.est.carreraSel}
+function asigVals(){const out=[];S.asig.forEach(a=>{const v=a.sel==='__otra'?a.otro.trim():a.sel;if(v&&!out.includes(v))out.push(v)});return out}
+
+/* ---------- Pantalla: ingreso ---------- */
+function renderLogin(msg){
+  $('#app').innerHTML=`
+  ${banner()}
+  <div class="card">
+    <h2>Ingresa con tus datos</h2>
+    <p class="hint" style="margin:0 0 4px">Si ya llenaste el formulario, al ingresar con los mismos datos verás lo que registraste y podrás editarlo. No hace falta crear cuenta.</p>
+    <label for="ci">Carnet de identidad (CI)</label>
+    <input id="ci" inputmode="text" autocomplete="off" placeholder="Ej. 1234567" value="${esc(S.ci)}">
+    <label for="carnet">Carnet universitario</label>
+    <input id="carnet" inputmode="text" autocomplete="off" placeholder="Ej. 45-1234" value="${esc(S.carnet)}">
+    <p class="hint">Escríbelo como figura en tu carnet universitario (con o sin guion).</p>
+    <div id="loginMsg">${msg?`<div class="banner b-err">${msg}</div>`:''}</div>
+    <button class="btn" id="btnLogin" style="margin-top:12px">Continuar</button>
+  </div>`;
+  $('#btnLogin').onclick=doLogin;
+  $('#carnet').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+}
+async function doLogin(){
+  S.ci=$('#ci').value.trim();S.carnet=$('#carnet').value.trim();
+  if(S.ci.length<5||S.carnet.length<3){renderLogin('Escribe tu CI y tu carnet universitario completos.');return}
+  const b=$('#btnLogin');b.disabled=true;b.textContent='Verificando…';
+  try{
+    const r=await rpc('act_cargar',{p_ci:S.ci,p_carnet:S.carnet});
+    if(r.error==='credenciales'){renderLogin('El carnet universitario no coincide con ese CI. Revisa que lo hayas escrito bien. Si es tu primera vez y crees que otra persona usó tu CI, avisa a tu docente.');return}
+    if(r.error==='bloqueado'){renderLogin('Demasiados intentos fallidos. Espera 10 minutos e inténtalo de nuevo.');return}
+    if(r.error){renderLogin('Revisa los datos ingresados.');return}
+    S.abierto=r.abierto;S.cierre=r.cierre;S.existe=r.existe;
+    if(r.existe){
+      const e=r.estudiante;
+      S.est.nombres=e.nombres;S.est.apellidos=e.apellidos;
+      if(CARRERAS.includes(e.carrera)){S.est.carreraSel=e.carrera;S.est.carreraOtra=''}else{S.est.carreraSel='__otra';S.est.carreraOtra=e.carrera}
+      S.asig=e.asignaturas.map(a=>MATERIAS.includes(a)?{sel:a,otro:''}:{sel:'__otra',otro:a});
+      S.acts=r.actividades.map(a=>({fi:a.fecha_inicio||'',ff:a.fecha_fin||'',dias:a.dias??'',desc:a.descripcion,pts:a.puntos??'',asig:a.asignatura}));
+      if(!S.acts.length)S.acts=[newAct()];
+      if(S.abierto){S.screen='form'}else{S.screen='resumen'}
+    }else{
+      if(!S.abierto){S.screen='cerrado'}else{S.screen='form'}
+    }
+    render();window.scrollTo(0,0);
+  }catch(e){renderLogin('No se pudo conectar. Revisa tu internet e inténtalo de nuevo.')}
+}
+
+/* ---------- Pantalla: formulario ---------- */
+function setEst(k,v){S.est[k]=v}
+function setAsigSel(i,v){S.asig[i].sel=v;render(true)}
+function setAsigOtro(i,v){S.asig[i].otro=v;render(true)}
+function addAsig(){S.asig.push({sel:'',otro:''});render(true)}
+function delAsig(i){S.asig.splice(i,1);if(!S.asig.length)S.asig.push({sel:'',otro:''});render(true)}
+function setAct(i,k,v){
+  S.acts[i][k]=v;
+  if(k==='fi'||k==='ff'){
+    const a=S.acts[i];
+    if(a.fi&&a.ff){const d=Math.round((new Date(a.ff)-new Date(a.fi))/86400000)+1;if(d>=1){a.dias=d;const el=document.getElementById('dias'+i);if(el)el.value=d}}
+  }
+}
+function addAct(){S.acts.push(newAct());render(true);setTimeout(()=>{const c=document.querySelectorAll('.actcard');if(c.length)c[c.length-1].scrollIntoView({behavior:'smooth',block:'start'})},50)}
+function delAct(i){S.acts.splice(i,1);if(!S.acts.length)S.acts.push(newAct());render(true)}
+
+function renderForm(errs){
+  const mats=asigVals();
+  const hoy=new Date().toISOString().slice(0,10);
+  const asigHtml=S.asig.map((a,i)=>`
+    <div style="margin-top:8px">
+      <div class="row" style="align-items:center">
+        <select onchange="setAsigSel(${i},this.value)">
+          <option value="">Elige una asignatura…</option>
+          ${MATERIAS.map(m=>`<option ${a.sel===m?'selected':''}>${esc(m)}</option>`).join('')}
+          <option value="__otra" ${a.sel==='__otra'?'selected':''}>Otra…</option>
+        </select>
+        <button class="btn-del" style="flex:0 0 auto" onclick="delAsig(${i})">Quitar</button>
+      </div>
+      ${a.sel==='__otra'?`<input style="margin-top:6px" placeholder="Escribe el nombre de la asignatura" value="${esc(a.otro)}" onchange="setAsigOtro(${i},this.value)">`:''}
+    </div>`).join('');
+  const actsHtml=S.acts.map((a,i)=>`
+    <div class="card actcard">
+      <div class="act-head"><h3>Actividad ${i+1}</h3>${S.acts.length>1?`<button class="btn-del" onclick="delAct(${i})">Quitar</button>`:''}</div>
+      <div class="row">
+        <div><label>Fecha de inicio</label><input type="date" max="${hoy}" value="${esc(a.fi)}" onchange="setAct(${i},'fi',this.value)"></div>
+        <div><label>Fecha de fin</label><input type="date" max="${hoy}" value="${esc(a.ff)}" onchange="setAct(${i},'ff',this.value)"></div>
+      </div>
+      <p class="hint">Aproximadas, si no recuerdas exactamente. Si fue un solo día, pon la misma fecha o deja la de fin vacía.</p>
+      <label>Duración en días (aprox.)</label>
+      <input id="dias${i}" type="number" inputmode="numeric" min="0" max="366" placeholder="Ej. 1" value="${esc(a.dias)}" oninput="setAct(${i},'dias',this.value)">
+      <label>Descripción: qué hiciste y de qué trataba la actividad</label>
+      <textarea placeholder="Ej. Ayudé a armar el stand de la facultad en FEXPO durante dos días…" oninput="setAct(${i},'desc',this.value)">${esc(a.desc)}</textarea>
+      <label>Puntos que se te ofrecieron (referencial)</label>
+      <input type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="Ej. 5" value="${esc(a.pts)}" oninput="setAct(${i},'pts',this.value)">
+      <p class="hint">Es solo referencial: el docente definirá los puntos finales.</p>
+      <label>¿A qué asignatura se suman estos puntos?</label>
+      <select onchange="setAct(${i},'asig',this.value)">
+        <option value="">Elige…</option>
+        ${mats.map(m=>`<option ${a.asig===m?'selected':''}>${esc(m)}</option>`).join('')}
+      </select>
+      ${mats.length?'':'<p class="hint">Primero marca tus asignaturas arriba.</p>'}
+    </div>`).join('');
+  $('#app').innerHTML=`
+  ${banner()}
+  <div id="errBox">${errs&&errs.length?`<div class="banner b-err"><b>Revisa lo siguiente:</b><ul class="errs">${errs.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:''}</div>
+  <div class="card">
+    <h2>Tus datos</h2>
+    <div class="hint">CI: <b>${esc(S.ci)}</b> · Carnet univ.: <b>${esc(S.carnet)}</b></div>
+    <label>Nombres</label><input value="${esc(S.est.nombres)}" autocomplete="given-name" oninput="setEst('nombres',this.value)">
+    <label>Apellidos</label><input value="${esc(S.est.apellidos)}" autocomplete="family-name" oninput="setEst('apellidos',this.value)">
+    <label>Carrera</label>
+    <select onchange="setEst('carreraSel',this.value);render(true)">
+      <option value="">Elige tu carrera…</option>
+      ${CARRERAS.map(c=>`<option ${S.est.carreraSel===c?'selected':''}>${esc(c)}</option>`).join('')}
+      <option value="__otra" ${S.est.carreraSel==='__otra'?'selected':''}>Otra…</option>
+    </select>
+    ${S.est.carreraSel==='__otra'?`<input style="margin-top:6px" placeholder="Escribe tu carrera" value="${esc(S.est.carreraOtra)}" oninput="setEst('carreraOtra',this.value)">`:''}
+  </div>
+  <div class="card">
+    <h2>Asignaturas que llevas conmigo</h2>
+    ${asigHtml}
+    <button class="btn-add" onclick="addAsig()">＋ Agregar otra asignatura</button>
+    <div class="banner b-warn" style="margin-bottom:0">⚠ Recuerda: los puntos extra <b>no van a todas las asignaturas</b>. En cada actividad indicarás a cuál se suman.</div>
+  </div>
+  <h2 style="margin:18px 4px 0;font-size:1.05rem">Actividades</h2>
+  ${actsHtml}
+  <button class="btn-add" onclick="addAct()">＋ Agregar otra actividad</button>
+  <div class="banner b-warn" style="margin-top:16px">${esc(AVISO_FINAL)}</div>
+  <button class="btn" style="margin-top:6px" onclick="irResumen()">Revisar y enviar</button>`;
+}
+function validar(){
+  const e=[];
+  if(S.est.nombres.trim().length<2)e.push('Escribe tus nombres.');
+  if(S.est.apellidos.trim().length<2)e.push('Escribe tus apellidos.');
+  if(carreraVal().length<2)e.push('Elige tu carrera.');
+  const mats=asigVals();
+  if(!mats.length)e.push('Marca al menos una asignatura.');
+  S.acts.forEach((a,i)=>{
+    const n='Actividad '+(i+1)+': ';
+    if(a.desc.trim().length<3)e.push(n+'falta la descripción.');
+    if(!a.asig||!mats.includes(a.asig))e.push(n+'elige a qué asignatura se suman los puntos.');
+    if(a.fi&&a.ff&&a.ff<a.fi)e.push(n+'la fecha de fin es anterior a la de inicio.');
+    if(a.pts!==''&&(isNaN(+a.pts)||+a.pts<0||+a.pts>100))e.push(n+'los puntos deben estar entre 0 y 100.');
+  });
+  return e;
+}
+function irResumen(){
+  const e=validar();
+  if(e.length){renderForm(e);window.scrollTo(0,0);return}
+  S.screen='resumen';render();window.scrollTo(0,0);
+}
+
+/* ---------- Pantalla: resumen ---------- */
+function renderResumen(msg){
+  const mats=asigVals();
+  const d=v=>v?v.split('-').reverse().join('/'):'—';
+  $('#app').innerHTML=`
+  ${banner()}
+  ${msg?`<div class="banner b-err">${esc(msg)}</div>`:''}
+  <div class="card"><h2>${S.abierto?'Revisa antes de enviar':'Lo que registraste'}</h2>
+    <dl class="sum">
+      <dt>Estudiante</dt><dd>${esc(S.est.nombres.trim())} ${esc(S.est.apellidos.trim())}</dd>
+      <dt>CI / Carnet universitario</dt><dd>${esc(S.ci)} / ${esc(S.carnet)}</dd>
+      <dt>Carrera</dt><dd>${esc(carreraVal())}</dd>
+      <dt>Asignaturas</dt><dd>${mats.map(m=>`<span class="pill">${esc(m)}</span>`).join('')}</dd>
+    </dl>
+  </div>
+  ${S.acts.map((a,i)=>`<div class="card"><h2>Actividad ${i+1}</h2>
+    <dl class="sum">
+      <dt>Fechas</dt><dd>${d(a.fi)} → ${d(a.ff)}${a.dias!==''?` (${esc(a.dias)} día${+a.dias===1?'':'s'})`:''}</dd>
+      <dt>Descripción</dt><dd>${esc(a.desc.trim())}</dd>
+      <dt>Puntos (referencial)</dt><dd>${a.pts===''?'—':esc(a.pts)}</dd>
+      <dt>Se suman a</dt><dd>${esc(a.asig)}</dd>
+    </dl></div>`).join('')}
+  <div class="banner b-warn">${esc(AVISO_FINAL)}</div>
+  ${S.abierto?`<button class="btn" id="btnEnviar">Enviar</button>
+  <button class="btn btn2" style="width:100%;margin-top:10px" onclick="S.screen='form';render();window.scrollTo(0,0)">Volver a editar</button>`:''}`;
+  const b=$('#btnEnviar');if(b)b.onclick=enviar;
+}
+async function enviar(){
+  const b=$('#btnEnviar');b.disabled=true;b.textContent='Enviando…';
+  const datos={nombres:S.est.nombres.trim(),apellidos:S.est.apellidos.trim(),carrera:carreraVal(),asignaturas:asigVals(),
+    actividades:S.acts.map(a=>({fecha_inicio:a.fi||null,fecha_fin:a.ff||null,dias:a.dias===''?null:+a.dias,descripcion:a.desc.trim(),puntos:a.pts===''?null:String(a.pts),asignatura:a.asig}))};
+  try{
+    const r=await rpc('act_guardar',{p_ci:S.ci,p_carnet:S.carnet,p_datos:datos});
+    if(r.ok){S.guardado=r.guardado_en;S.screen='listo';render();window.scrollTo(0,0);return}
+    const m={cerrado:'El formulario ya está cerrado.',credenciales:'El carnet no coincide con ese CI.',bloqueado:'Demasiados intentos. Espera 10 minutos.',datos_personales:'Revisa tus nombres, apellidos y carrera.',asignaturas:'Revisa tus asignaturas.',actividades:'Debes registrar al menos una actividad (máximo 40).'};
+    renderResumen(m[r.error]||'No se pudo guardar. Revisa los datos.');
+  }catch(e){
+    const msg=String(e.message||'');
+    let t='No se pudo enviar. Revisa tu internet e inténtalo de nuevo.';
+    const mm=msg.match(/(descripcion|asignatura|puntos)_invalid[ao]s?_(\d+)/);
+    if(mm)t=`Revisa la actividad ${mm[2]} (${mm[1]}).`;
+    renderResumen(t);
+  }
+}
+
+/* ---------- Otras pantallas ---------- */
+function renderListo(){
+  $('#app').innerHTML=`
+  <div class="card"><div class="banner b-ok" style="margin:0"><b>✅ ¡Listo! Tu registro se guardó.</b></div>
+    <p>Guardado el ${fmtCierre(S.guardado)} (hora de Bolivia).</p>
+    ${S.abierto?`<p>Puedes volver a entrar con tu CI y tu carnet universitario para <b>agregar o corregir actividades</b> hasta el cierre del formulario (${fmtCierre(S.cierre)}).</p>`:''}
+    <div class="banner b-warn">${esc(AVISO_FINAL)}</div>
+    <button class="btn btn2" style="width:100%" onclick="S.screen='form';render();window.scrollTo(0,0)">Editar mi registro</button>
+  </div>`;
+}
+function renderCerrado(){
+  $('#app').innerHTML=`${banner()}<div class="card"><h2>No hay registro previo con esos datos</h2><p>El formulario ya cerró, así que no se pueden crear registros nuevos. Habla con tu docente.</p></div>`;
+}
+function render(keep){
+  switch(S.screen){
+    case 'login':return renderLogin();
+    case 'form':return renderForm();
+    case 'resumen':return renderResumen();
+    case 'listo':return renderListo();
+    case 'cerrado':return renderCerrado();
+  }
+}
+(async function init(){
+  render();
+  try{const r=await rpc('act_estado');S.abierto=r.abierto;S.cierre=r.cierre;if(S.screen==='login')renderLogin()}catch(e){}
+})();
+</script>
+</body>
+</html>
