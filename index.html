@@ -54,10 +54,17 @@ const SB='https://ulbstgtnzsevnsvnnuby.supabase.co';
 const KEY='sb_publishable_JfdOTWjVXropkVO7dzDSTA_AWr2Cv94';
 const MATERIAS=['Electrónica Digital 1','Electrónica Digital 2','Medidas Eléctricas','Transformadas y Funciones Especiales','Métodos Numéricos','Titulación'];
 const CARRERAS=['Ingeniería Eléctrica','Ingeniería Electrónica','Ingeniería Electromecánica','Ingeniería Mecatrónica','Ingeniería Biomédica'];
+const OFENSIVAS='puta puto putas putos putita putito putada putear hijueputa hijoeputa hdp ptm mierda carajo pendejo pendeja cabron cabrona cojudo cojuda verga culo lameculos cagar cagada cagado cago joder jodete jodido idiota imbecil estupido estupida tarado tarada huevon huevona webon zorra maricon marica chucha chuchatumadre conchatumadre conchasumadre ctm csm hostia gilipollas pelotudo malparido malparida gonorrea fuck fucking fucker motherfucker shit bitch asshole bastard'.split(' ');
+function ofensivo(t){
+  let n=String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const m={'@':'a','$':'s','0':'o','1':'i','3':'e','4':'a','5':'s','7':'t'};
+  n=' '+n.replace(/[@$013457]/g,c=>m[c]).replace(/[^a-z]+/g,' ')+' ';
+  return OFENSIVAS.some(w=>new RegExp('(^| )'+w.split('').map(c=>c+'+').join('')+'[aeos]{0,2}( |$)').test(n));
+}
 const AVISO_FINAL='Todas estas actividades se te solicitará demostrarlas la próxima semana en clases. Si se comprueba que se falseó información, se descontará nota.';
 
 const S={screen:'login',ci:'',carnet:'',abierto:true,cierre:null,
-  est:{nombres:'',apellidos:'',carreraSel:'',carreraOtra:''},
+  est:{nombres:'',apellidos:'',carreraSel:''},
   asig:[{sel:'',otro:''}], acts:[newAct()], guardado:null, existe:false};
 
 function newAct(){return {fi:'',ff:'',dias:'',desc:'',pts:'',asig:''}}
@@ -80,7 +87,7 @@ function banner(){
   if(S.abierto) return `<div class="banner b-info">⏰ El formulario cierra el <b>${fmtCierre(S.cierre)}</b> (hora de Bolivia). Hasta entonces puedes volver a entrar para editar.</div>`;
   return `<div class="banner b-err"><b>El formulario está cerrado.</b> Si necesitas registrar o corregir algo, habla con tu docente.</div>`;
 }
-function carreraVal(){return S.est.carreraSel==='__otra'?S.est.carreraOtra.trim():S.est.carreraSel}
+function carreraVal(){return S.est.carreraSel}
 function asigVals(){const out=[];S.asig.forEach(a=>{const v=a.sel==='__otra'?a.otro.trim():a.sel;if(v&&!out.includes(v))out.push(v)});return out}
 
 /* ---------- Pantalla: ingreso ---------- */
@@ -114,7 +121,7 @@ async function doLogin(){
     if(r.existe){
       const e=r.estudiante;
       S.est.nombres=e.nombres;S.est.apellidos=e.apellidos;
-      if(CARRERAS.includes(e.carrera)){S.est.carreraSel=e.carrera;S.est.carreraOtra=''}else{S.est.carreraSel='__otra';S.est.carreraOtra=e.carrera}
+      S.est.carreraSel=CARRERAS.includes(e.carrera)?e.carrera:'';
       S.asig=e.asignaturas.map(a=>MATERIAS.includes(a)?{sel:a,otro:''}:{sel:'__otra',otro:a});
       S.acts=r.actividades.map(a=>({fi:a.fecha_inicio||'',ff:a.fecha_fin||'',dias:a.dias??'',desc:a.descripcion,pts:a.puntos??'',asig:a.asignatura}));
       if(!S.acts.length)S.acts=[newAct()];
@@ -188,12 +195,10 @@ function renderForm(errs){
     <label>Nombres</label><input value="${esc(S.est.nombres)}" autocomplete="given-name" oninput="setEst('nombres',this.value)">
     <label>Apellidos</label><input value="${esc(S.est.apellidos)}" autocomplete="family-name" oninput="setEst('apellidos',this.value)">
     <label>Carrera</label>
-    <select onchange="setEst('carreraSel',this.value);render(true)">
+    <select onchange="setEst('carreraSel',this.value)">
       <option value="">Elige tu carrera…</option>
       ${CARRERAS.map(c=>`<option ${S.est.carreraSel===c?'selected':''}>${esc(c)}</option>`).join('')}
-      <option value="__otra" ${S.est.carreraSel==='__otra'?'selected':''}>Otra…</option>
     </select>
-    ${S.est.carreraSel==='__otra'?`<input style="margin-top:6px" placeholder="Escribe tu carrera" value="${esc(S.est.carreraOtra)}" oninput="setEst('carreraOtra',this.value)">`:''}
   </div>
   <div class="card">
     <h2>Asignaturas que llevas conmigo</h2>
@@ -212,11 +217,14 @@ function validar(){
   if(S.est.nombres.trim().length<2)e.push('Escribe tus nombres.');
   if(S.est.apellidos.trim().length<2)e.push('Escribe tus apellidos.');
   if(carreraVal().length<2)e.push('Elige tu carrera.');
+  if(ofensivo(S.est.nombres)||ofensivo(S.est.apellidos))e.push('Tus nombres o apellidos contienen lenguaje inapropiado. Corrígelo para poder enviar.');
+  S.asig.forEach(a=>{if(a.sel==='__otra'&&ofensivo(a.otro))e.push('El nombre de una asignatura contiene lenguaje inapropiado.')});
   const mats=asigVals();
   if(!mats.length)e.push('Marca al menos una asignatura.');
   S.acts.forEach((a,i)=>{
     const n='Actividad '+(i+1)+': ';
     if(a.desc.trim().length<3)e.push(n+'falta la descripción.');
+    else if(ofensivo(a.desc))e.push(n+'la descripción contiene lenguaje inapropiado. Corrígela para poder enviar.');
     if(!a.asig||!mats.includes(a.asig))e.push(n+'elige a qué asignatura se suman los puntos.');
     if(a.fi&&a.ff&&a.ff<a.fi)e.push(n+'la fecha de fin es anterior a la de inicio.');
     if(a.pts!==''&&(isNaN(+a.pts)||+a.pts<0||+a.pts>100))e.push(n+'los puntos deben estar entre 0 y 100.');
@@ -263,7 +271,7 @@ async function enviar(){
   try{
     const r=await rpc('act_guardar',{p_ci:S.ci,p_carnet:S.carnet,p_datos:datos});
     if(r.ok){S.guardado=r.guardado_en;S.screen='listo';render();window.scrollTo(0,0);return}
-    const m={cerrado:'El formulario ya está cerrado.',credenciales:'El carnet no coincide con ese CI.',bloqueado:'Demasiados intentos. Espera 10 minutos.',datos_personales:'Revisa tus nombres, apellidos y carrera.',asignaturas:'Revisa tus asignaturas.',actividades:'Debes registrar al menos una actividad (máximo 40).'};
+    const m={cerrado:'El formulario ya está cerrado.',credenciales:'El carnet no coincide con ese CI.',bloqueado:'Demasiados intentos. Espera 10 minutos.',datos_personales:'Revisa tus nombres, apellidos y carrera.',ofensivo:'Hay texto con lenguaje inapropiado. Corrígelo para poder enviar.',asignaturas:'Revisa tus asignaturas.',actividades:'Debes registrar al menos una actividad (máximo 40).'};
     renderResumen(m[r.error]||'No se pudo guardar. Revisa los datos.');
   }catch(e){
     const msg=String(e.message||'');
